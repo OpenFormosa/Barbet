@@ -70,6 +70,7 @@ class BarbetConfig(PretrainedConfig):
         unk_token_id: int | None = UNK_TOKEN_ID,
         **kwargs: Any,
     ) -> None:
+        rope_scaling = self._normalize_rope_scaling(rope_scaling, kwargs.pop("rope_parameters", None))
         super().__init__(
             pad_token_id=pad_token_id,
             bos_token_id=bos_token_id,
@@ -86,7 +87,7 @@ class BarbetConfig(PretrainedConfig):
         self.head_dim = head_dim
         self.max_position_embeddings = max_position_embeddings
         self.rope_theta = rope_theta
-        self.rope_scaling = dict(rope_scaling) if rope_scaling else None
+        self.rope_scaling = rope_scaling
         self.sliding_window_size = sliding_window_size
         self.global_attention_layers = [int(layer) for layer in global_attention_layers]
         self.mamba_layers = [int(layer) for layer in mamba_layers]
@@ -199,6 +200,21 @@ class BarbetConfig(PretrainedConfig):
                 raise ValueError(
                     f"rope_scaling.type must be one of {ROPE_SCALING_TYPES}, got {scaling_type!r}"
                 )
+
+    @staticmethod
+    def _normalize_rope_scaling(
+        rope_scaling: dict[str, Any] | None,
+        rope_parameters: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        scaling = rope_scaling if rope_scaling is not None else rope_parameters
+        if not scaling:
+            return None
+        normalized = dict(scaling)
+        rope_type = normalized.pop("rope_type", None)
+        if "type" not in normalized and rope_type is not None:
+            normalized["type"] = rope_type
+        normalized.setdefault("type", "linear")
+        return normalized
 
 
 BarbetConfig.register_for_auto_class()

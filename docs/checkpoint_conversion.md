@@ -1,11 +1,7 @@
 # Checkpoint Conversion
 
-This repository provides the Hugging Face model class. It does not yet include
-the Megatron-to-HF conversion script. The Open Formosa repository ships
-reference-checkpoint converters (`scripts/convert_megatron_to_hf.py` /
-`scripts/convert_hf_to_megatron.py`) for its CPU-safe reference format; a
-production Megatron HybridModel converter into this module layout is still a
-separate task.
+This repository provides the Hugging Face model class and a production
+Megatron `torch_dist` to HF `safetensors` converter for Barbet 1B R2.
 
 ## Why Conversion Is Needed
 
@@ -25,7 +21,21 @@ Conversion must map:
 - QK RMSNorm parameters;
 - SwiGLU gate/up/down projections;
 - Mamba-style mixer parameters;
-- optional MTP projection parameters.
+- training-only MTP auxiliary heads are intentionally omitted from inference
+  exports.
+
+## Command
+
+```bash
+python scripts/convert_torch_dist_to_hf.py \
+  --checkpoint /path/to/open_formosa_1b_checkpoint \
+  --output-dir /path/to/barbet-1b-hf \
+  --force
+```
+
+The `--checkpoint` path can be either the checkpoint parent directory that
+contains `latest_checkpointed_iteration.txt` or a concrete `iter_0000xxx`
+directory.
 
 ## Expected Output
 
@@ -33,10 +43,26 @@ A converted Hugging Face checkpoint should contain:
 
 ```text
 config.json
+config_1m_extension.json
 configuration_barbet.py
 modeling_barbet.py
 model.safetensors
+conversion_report.json
 ```
+
+## Conversion Mapping
+
+The converter maps Megatron HybridModel residual modules back into 28 logical
+HF decoder blocks:
+
+- Megatron `decoder.layers.2*i` -> HF token mixer for logical layer `i`.
+- Megatron `decoder.layers.2*i+1` -> HF MLP for logical layer `i`.
+- Grouped Megatron `linear_qkv.weight` is split from interleaved GQA groups
+  into HF `q_proj`, `k_proj`, and `v_proj`.
+- Megatron SwiGLU `linear_fc1.weight` is split into HF `gate_proj` and
+  `up_proj`.
+- Megatron Mamba2 `z/x/B/C/dt`, conv, `A_log`, `D`, `dt_bias`, gated norm,
+  and output projection tensors map directly onto the HF Mamba mixer.
 
 It should load with:
 
@@ -51,7 +77,7 @@ model = AutoModelForCausalLM.from_pretrained(
 
 ## Conversion Gates
 
-A conversion script should verify:
+A conversion run should verify:
 
 - all expected HF keys are present;
 - no unexpected Megatron shards are silently ignored;
@@ -74,4 +100,8 @@ The HF implementation has been smoke-tested for:
 - remote-code `AutoModelForCausalLM`;
 - `generate()`.
 
-The production Megatron checkpoint conversion script remains a separate task.
+The production converter is implemented in
+`scripts/convert_torch_dist_to_hf.py`. The validated 1B export uses native 256K
+as `config.json` and writes the 1M extrapolation metadata to
+`config_1m_extension.json` so default loading preserves native-checkpoint decode
+behavior.

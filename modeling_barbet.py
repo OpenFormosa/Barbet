@@ -23,6 +23,13 @@ from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutpu
 
 from .configuration_barbet import BarbetConfig
 
+try:
+    from mamba_ssm.ops.triton.layernorm_gated import RMSNorm as MambaRMSNormGated
+    from mamba_ssm.ops.triton.ssd_combined import mamba_chunk_scan_combined
+except Exception:
+    MambaRMSNormGated = None
+    mamba_chunk_scan_combined = None
+
 
 class BarbetCache:
     """Hybrid per-layer cache for incremental decoding.
@@ -40,6 +47,7 @@ class BarbetCache:
         self.key_cache: list[torch.Tensor | None] = [None] * num_layers
         self.value_cache: list[torch.Tensor | None] = [None] * num_layers
         self.conv_cache: list[torch.Tensor | None] = [None] * num_layers
+        self.ssm_cache: list[torch.Tensor | None] = [None] * num_layers
         self.seen_tokens = 0
 
     def get_seq_length(self, layer_idx: int = 0) -> int:
@@ -81,7 +89,7 @@ class BarbetCache:
         return full
 
     def reorder_cache(self, beam_idx: torch.LongTensor) -> None:
-        for tensors in (self.key_cache, self.value_cache, self.conv_cache):
+        for tensors in (self.key_cache, self.value_cache, self.conv_cache, self.ssm_cache):
             for idx, tensor in enumerate(tensors):
                 if tensor is not None:
                     tensors[idx] = tensor.index_select(0, beam_idx.to(tensor.device))
@@ -236,7 +244,8 @@ class BarbetAttention(nn.Module):
         attn_weights = attn_weights.masked_fill(~allowed, min_value)
 
         if self.sink_logits is None:
-            attn_probs = torch.softmax(attn_weights.float(), dim=-1).to(query_states.dtype)
+            softmax_input = attn_weights if attn_weights.is_cuda else attn_weights.float()
+            attn_probs = torch.softmax(softmax_input, dim=-1).to(query_states.dtype)
         else:
             sink = self.sink_logits.view(1, self.num_heads, 1, 1).float()
             max_score = torch.maximum(attn_weights.float().max(dim=-1, keepdim=True).values, sink)
@@ -251,28 +260,156 @@ class BarbetAttention(nn.Module):
 
 
 class BarbetMambaMixer(nn.Module):
-    """Deterministic PyTorch Mamba-style fallback mixer.
-
-    This keeps the HF model self-contained. Production checkpoint conversion can
-    later map Megatron/Mamba2 weights onto these modules or replace this class
-    with a kernel-backed implementation.
-    """
+    """Megatron Mamba2-compatible mixer with a PyTorch selective-scan path."""
 
     def __init__(self, config: BarbetConfig) -> None:
         super().__init__()
-        inner_size = config.hidden_size * config.mamba_expand
-        state_size = max(config.mamba_d_state, 1)
-        self.in_proj = nn.Linear(config.hidden_size, inner_size * 2, bias=False)
-        self.conv = nn.Conv1d(
-            inner_size,
-            inner_size,
-            kernel_size=config.mamba_d_conv,
-            padding=config.mamba_d_conv - 1,
-            groups=inner_size,
+        self.hidden_size = config.hidden_size
+        self.inner_size = config.hidden_size * config.mamba_expand
+        self.d_state = max(config.mamba_d_state, 1)
+        self.d_conv = config.mamba_d_conv
+        self.head_dim = config.head_dim
+        self.num_heads = self.inner_size // self.head_dim
+        self.num_groups = config.num_key_value_heads
+        if self.inner_size % self.head_dim != 0:
+            raise ValueError("mamba inner size must be divisible by head_dim")
+        if self.num_heads % self.num_groups != 0:
+            raise ValueError("mamba heads must be divisible by mamba groups")
+        self.group_size = self.inner_size // self.num_groups
+
+        self.in_proj_z = nn.Linear(config.hidden_size, self.inner_size, bias=False)
+        self.in_proj_x = nn.Linear(config.hidden_size, self.inner_size, bias=False)
+        self.in_proj_b = nn.Linear(config.hidden_size, self.num_groups * self.d_state, bias=False)
+        self.in_proj_c = nn.Linear(config.hidden_size, self.num_groups * self.d_state, bias=False)
+        self.in_proj_dt = nn.Linear(config.hidden_size, self.num_heads, bias=False)
+        self.conv_x = nn.Conv1d(
+            self.inner_size,
+            self.inner_size,
+            kernel_size=self.d_conv,
+            padding=self.d_conv - 1,
+            groups=self.inner_size,
         )
-        self.state_proj = nn.Linear(inner_size, state_size, bias=False)
-        self.state_back = nn.Linear(state_size, inner_size, bias=False)
-        self.out_proj = nn.Linear(inner_size, config.hidden_size, bias=False)
+        self.conv_b = nn.Conv1d(
+            self.num_groups * self.d_state,
+            self.num_groups * self.d_state,
+            kernel_size=self.d_conv,
+            padding=self.d_conv - 1,
+            groups=self.num_groups * self.d_state,
+        )
+        self.conv_c = nn.Conv1d(
+            self.num_groups * self.d_state,
+            self.num_groups * self.d_state,
+            kernel_size=self.d_conv,
+            padding=self.d_conv - 1,
+            groups=self.num_groups * self.d_state,
+        )
+        self.dt_bias = nn.Parameter(torch.zeros(self.num_heads))
+        self.A_log = nn.Parameter(torch.zeros(self.num_heads))
+        self.D = nn.Parameter(torch.ones(self.num_heads))
+        if MambaRMSNormGated is not None:
+            self.norm = MambaRMSNormGated(
+                self.inner_size,
+                eps=1.0e-5,
+                group_size=self.group_size,
+                norm_before_gate=False,
+            )
+        else:
+            self.norm = BarbetRMSNorm(self.inner_size, eps=1.0e-5)
+        self.out_proj = nn.Linear(self.inner_size, config.hidden_size, bias=False)
+
+    def _conv_full(self, conv: nn.Conv1d, values: torch.Tensor) -> torch.Tensor:
+        seq_len = values.shape[1]
+        values = values.transpose(1, 2)
+        values = conv(values)[..., :seq_len]
+        return F.silu(values.transpose(1, 2))
+
+    def _rmsnorm_gated(self, hidden_states: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
+        if MambaRMSNormGated is not None and isinstance(self.norm, MambaRMSNormGated):
+            return self.norm(hidden_states, gate)
+        hidden_states = hidden_states * F.silu(gate)
+        shape = hidden_states.shape
+        grouped = hidden_states.view(*shape[:-1], self.num_groups, self.group_size)
+        variance = grouped.float().pow(2).mean(dim=-1, keepdim=True)
+        grouped = grouped.float() * torch.rsqrt(variance + self.norm.eps)
+        weight = self.norm.weight.view(1, 1, self.num_groups, self.group_size)
+        return (grouped.to(dtype=self.norm.weight.dtype) * weight).view(shape)
+
+    def _selective_scan(
+        self,
+        x: torch.Tensor,
+        b_proj: torch.Tensor,
+        c_proj: torch.Tensor,
+        dt: torch.Tensor,
+        z: torch.Tensor,
+        initial_state: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        batch_size, seq_len, _ = x.shape
+        dtype = x.dtype
+        x = x.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        b_proj = b_proj.view(batch_size, seq_len, self.num_groups, self.d_state)
+        c_proj = c_proj.view(batch_size, seq_len, self.num_groups, self.d_state)
+        z = z.view(batch_size, seq_len, self.num_heads, self.head_dim)
+
+        state = initial_state
+        if state is None:
+            state = x.new_zeros(batch_size, self.num_heads, self.head_dim, self.d_state)
+        else:
+            state = state.to(dtype=dtype)
+
+        heads_per_group = self.num_heads // self.num_groups
+        group_for_head = torch.arange(self.num_heads, device=x.device) // heads_per_group
+        a = -torch.exp(self.A_log.float()).to(dtype=dtype)
+        d = self.D.to(dtype=dtype)
+        dt_bias = self.dt_bias.to(dtype=dtype)
+        outputs: list[torch.Tensor] = []
+        for pos in range(seq_len):
+            dt_pos = F.softplus(dt[:, pos] + dt_bias)
+            d_a = torch.exp(dt_pos * a)
+            b_pos = b_proj[:, pos].index_select(1, group_for_head)
+            c_pos = c_proj[:, pos].index_select(1, group_for_head)
+            x_pos = x[:, pos]
+            state = state * d_a[:, :, None, None] + (
+                dt_pos[:, :, None, None] * b_pos[:, :, None, :] * x_pos[:, :, :, None]
+            )
+            y = (state * c_pos[:, :, None, :]).sum(dim=-1)
+            y = y + d[None, :, None] * x_pos
+            outputs.append(y.reshape(batch_size, self.inner_size))
+        y = torch.stack(outputs, dim=1)
+        return self._rmsnorm_gated(y, z.reshape(batch_size, seq_len, self.inner_size)), state
+
+    def _selective_scan_kernel(
+        self,
+        x: torch.Tensor,
+        b_proj: torch.Tensor,
+        c_proj: torch.Tensor,
+        dt: torch.Tensor,
+        z: torch.Tensor,
+        return_final_state: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        if mamba_chunk_scan_combined is None or not x.is_cuda:
+            raise RuntimeError("mamba_ssm selective-scan kernel is unavailable")
+        batch_size, seq_len, _ = x.shape
+        x = x.view(batch_size, seq_len, self.num_heads, self.head_dim).contiguous()
+        b_proj = b_proj.view(batch_size, seq_len, self.num_groups, self.d_state).contiguous()
+        c_proj = c_proj.view(batch_size, seq_len, self.num_groups, self.d_state).contiguous()
+        y = mamba_chunk_scan_combined(
+            x,
+            dt.contiguous(),
+            -torch.exp(self.A_log.float()),
+            b_proj,
+            c_proj,
+            chunk_size=128,
+            D=self.D,
+            z=None,
+            dt_bias=self.dt_bias.float(),
+            dt_softplus=True,
+            return_final_states=return_final_state,
+        )
+        final_state = None
+        if return_final_state:
+            y, final_state = y
+        y = y.reshape(batch_size, seq_len, self.inner_size)
+        return self._rmsnorm_gated(y, z), final_state
 
     def forward(
         self,
@@ -280,20 +417,56 @@ class BarbetMambaMixer(nn.Module):
         past_key_values: BarbetCache | None = None,
         layer_idx: int = 0,
     ) -> torch.Tensor:
-        gate, hidden = self.in_proj(hidden_states).chunk(2, dim=-1)
-        conv_inputs = hidden.transpose(1, 2)
-        tail_len = self.conv.kernel_size[0] - 1
-        if past_key_values is not None:
-            conv_inputs = past_key_values.update_conv(layer_idx, conv_inputs, tail_len)
+        z = self.in_proj_z(hidden_states)
+        x = self.in_proj_x(hidden_states)
+        b_proj = self.in_proj_b(hidden_states)
+        c_proj = self.in_proj_c(hidden_states)
+        dt = self.in_proj_dt(hidden_states)
+
+        conv_inputs = torch.cat([x, b_proj, c_proj], dim=-1)
+        use_step_cache = (
+            past_key_values is not None
+            and past_key_values.conv_cache[layer_idx] is not None
+            and past_key_values.ssm_cache[layer_idx] is not None
+            and hidden_states.shape[1] == 1
+        )
+        if use_step_cache:
+            conv_state = past_key_values.conv_cache[layer_idx]
+            conv_state = torch.roll(conv_state, shifts=-1, dims=-1)
+            conv_state[:, :, -1] = conv_inputs[:, 0, :]
+            weights = torch.cat([self.conv_x.weight, self.conv_b.weight, self.conv_c.weight], dim=0)
+            bias = torch.cat([self.conv_x.bias, self.conv_b.bias, self.conv_c.bias], dim=0)
+            conv_out = (conv_state * weights.squeeze(1)[None, :, :]).sum(dim=-1) + bias
+            conv_out = F.silu(conv_out).unsqueeze(1).to(dtype=hidden_states.dtype)
+            past_key_values.conv_cache[layer_idx] = conv_state
         else:
-            conv_inputs = F.pad(conv_inputs, (tail_len, 0))
-        # Valid (unpadded) conv over the explicitly left-padded input: identical
-        # to the module's own causal padding, but cache-friendly.
-        conv = F.conv1d(
-            conv_inputs, self.conv.weight, self.conv.bias, groups=self.conv.groups
-        ).transpose(1, 2)
-        state = torch.tanh(self.state_back(torch.tanh(self.state_proj(conv))))
-        return self.out_proj(torch.sigmoid(gate) * state)
+            x = self._conv_full(self.conv_x, x)
+            b_proj = self._conv_full(self.conv_b, b_proj)
+            c_proj = self._conv_full(self.conv_c, c_proj)
+            conv_out = torch.cat([x, b_proj, c_proj], dim=-1)
+            if past_key_values is not None:
+                padded = F.pad(conv_inputs.transpose(1, 2), (max(self.d_conv - conv_inputs.shape[1], 0), 0))
+                past_key_values.conv_cache[layer_idx] = padded[..., -self.d_conv :]
+
+        x, b_proj, c_proj = torch.split(
+            conv_out,
+            [self.inner_size, self.num_groups * self.d_state, self.num_groups * self.d_state],
+            dim=-1,
+        )
+        if (
+            mamba_chunk_scan_combined is not None
+            and not use_step_cache
+            and hidden_states.is_cuda
+        ):
+            y, final_state = self._selective_scan_kernel(
+                x, b_proj, c_proj, dt, z, return_final_state=past_key_values is not None
+            )
+        else:
+            initial_state = past_key_values.ssm_cache[layer_idx] if use_step_cache else None
+            y, final_state = self._selective_scan(x, b_proj, c_proj, dt, z, initial_state=initial_state)
+        if past_key_values is not None:
+            past_key_values.ssm_cache[layer_idx] = final_state.detach()
+        return self.out_proj(y)
 
 
 class BarbetMLP(nn.Module):
