@@ -1,8 +1,9 @@
 ---
 language:
 - zh
-- zh-Hant
 - en
+language_bcp47:
+- zh-Hant
 library_name: transformers
 pipeline_tag: text-generation
 tags:
