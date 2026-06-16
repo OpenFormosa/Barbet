@@ -8,6 +8,7 @@ Barbet uses `BarbetConfig`, a standard Transformers `PretrainedConfig`.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `barbet_300m` | 20 | 1024 | 2816 | 8 | 2 | 8192 | 2048 |
 | `barbet_1b` | 28 | 1536 | 5120 | 16 | 2 | 262144 | 8192 |
+| `barbet_1b_1m` | 28 | 1536 | 5120 | 16 | 2 | 1048576 | 8192 |
 
 Both shipped configs currently use:
 
@@ -36,6 +37,7 @@ regenerate any converted checkpoints.
 
 - `configs/barbet_300m/config.json`
 - `configs/barbet_1b/config.json`
+- `configs/barbet_1b_1m/config.json`
 
 Each config contains:
 
@@ -59,6 +61,7 @@ This rewrites the config folders from the Python factory methods:
 
 - `BarbetConfig.barbet_300m()`
 - `BarbetConfig.barbet_1b()`
+- `BarbetConfig.barbet_1b_1m_extension()`
 
 ## Important Fields
 
@@ -82,6 +85,9 @@ configs do not use scaling. `BarbetConfig.barbet_1b_1m_extension()` mirrors the
 upstream 1M research config with linear scaling factor 4.0 from the 256K base.
 Only linear scaling affects the bundled PyTorch forward path; `yarn` and
 `longrope` entries are metadata for external runtimes.
+
+The 1M preset is an inference-time extrapolation config for the 256K-native 1B
+weights. It should not be described as native 1M pretraining.
 
 `qk_logit_clip`, `qk_clip_alpha`, `qk_clip_threshold`, `attention_sink`
 

@@ -52,10 +52,24 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 tok = AutoTokenizer.from_pretrained("voidful/PangolinTokenizer")
 model = AutoModelForCausalLM.from_pretrained(
-    "voidful/Barbet-300M",
+    "voidful/barbet-1b-base",
     trust_remote_code=True,
 )
 ```
+
+For config-only inspection, or before HF weights are published:
+
+```python
+from transformers import AutoConfig
+
+config = AutoConfig.from_pretrained("voidful/barbet-1b-base", trust_remote_code=True)
+print(config.max_position_embeddings)
+```
+
+The Hub repo may expose the 1M extension as the default `config.json` and keep
+the native 256K base config as `config_256k.json`. Both configs use the same
+1B R2 weights; the 1M config only changes RoPE scaling metadata and maximum
+context length.
 
 ## Generation
 

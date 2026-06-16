@@ -137,3 +137,12 @@ def test_1m_extension_rope_scaling() -> None:
         "factor": 4.0,
         "original_context_length": 262144,
     }
+
+    loaded_from_transformers_5_style = BarbetConfig(
+        rope_parameters={
+            "rope_type": "linear",
+            "factor": 4.0,
+            "original_context_length": 262144,
+        }
+    )
+    assert loaded_from_transformers_5_style.rope_scaling == config.rope_scaling

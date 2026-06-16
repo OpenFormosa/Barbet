@@ -37,7 +37,7 @@ extension from a validated 256K base.
 The planned direction is:
 
 ```text
-256K base -> external sparse/compressed-memory expansion -> 1M research model
+256K base -> linear RoPE x4 metadata -> external sparse/compressed-memory runtime
 ```
 
 A native full-attention 1M run is not a default config because global attention
@@ -63,3 +63,14 @@ linear scaling block above), mirroring
 PyTorch forward applies linear position scaling; the upstream CSA/HCA-lite
 compressed-memory mode remains the intended route for practical 1M
 experiments.
+
+The generated repository config is:
+
+```text
+configs/barbet_1b_1m/config.json
+```
+
+It is weight-compatible with the 256K Barbet 1B checkpoint because RoPE does
+not add learned position parameters. The tradeoff is runtime: without a sparse,
+DCA/YaRN-style, or compressed-memory engine, the global attention layers still
+make 1M prefill impractical for normal Transformers inference.

@@ -16,13 +16,15 @@
     4,
     8,
     12,
-    16
+    16,
+    20,
+    24
   ],
   "head_dim": 128,
   "hidden_dropout": 0.0,
-  "hidden_size": 1024,
+  "hidden_size": 1536,
   "initializer_range": 0.02,
-  "intermediate_size": 2816,
+  "intermediate_size": 5120,
   "mamba_d_conv": 4,
   "mamba_d_state": 64,
   "mamba_expand": 2,
@@ -31,9 +33,11 @@
     7,
     11,
     15,
-    19
+    19,
+    23,
+    27
   ],
-  "max_position_embeddings": 8192,
+  "max_position_embeddings": 1048576,
   "model_type": "barbet",
   "mtp_enabled": true,
   "mtp_loss_weights": {
@@ -44,8 +48,8 @@
     2,
     3
   ],
-  "num_attention_heads": 8,
-  "num_hidden_layers": 20,
+  "num_attention_heads": 16,
+  "num_hidden_layers": 28,
   "num_key_value_heads": 2,
   "pad_token_id": 114691,
   "qk_clip_alpha": 0.5,
@@ -53,8 +57,13 @@
   "qk_logit_clip": false,
   "qk_norm": true,
   "rms_norm_eps": 1e-06,
+  "rope_scaling": {
+    "factor": 4.0,
+    "original_context_length": 262144,
+    "type": "linear"
+  },
   "rope_theta": 10000000.0,
-  "sliding_window_size": 2048,
+  "sliding_window_size": 8192,
   "tie_word_embeddings": true,
   "torch_dtype": "bfloat16",
   "transformers_version": "4.45.0",
