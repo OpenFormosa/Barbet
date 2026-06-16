@@ -25,12 +25,14 @@ Mamba-style sequence mixer layers.
 
 ## Current Hub Status
 
-This initial publication contains the model card, config, and Transformers
-remote-code files. HF-compatible `safetensors` weights are pending conversion
-from the internal Megatron `torch_dist` checkpoint format. If no
-`model.safetensors` file is present in this repository, use `AutoConfig` for
-inspection only; `AutoModelForCausalLM.from_pretrained` will require converted
-weights.
+This publication contains HF-compatible `safetensors` weights converted from
+the internal Megatron `torch_dist` checkpoint
+`open_formosa_1b_r2_phase3_ctx256k_best_i128_earlypos_sft_lr5e7_cp8_1node_c019_20260615`
+at iteration 96, plus config and Transformers remote-code files.
+
+The exported weights contain the main causal-LM path. Megatron MTP auxiliary
+heads were used during training but are not exported because they are not used
+for next-token generation.
 
 ## Architecture
 
@@ -104,8 +106,41 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 ```
 
-The Hub `config.json` may point at the 1M extension. The native 256K config is
-kept as `config_256k.json`; both configs use the same 1B R2 weight shapes.
+The Hub `config.json` is the native 256K checkpoint config for decode parity.
+The 1M extrapolation config is kept as `config_1m_extension.json`; both configs
+use the same 1B R2 weight shapes.
+
+For closest Megatron decode parity, run on CUDA with `mamba_ssm` available so
+the remote-code model uses the fused Mamba2 scan and gated RMSNorm path. Without
+`mamba_ssm`, the model falls back to a self-contained PyTorch Mamba path that is
+intended for portability and smoke tests.
+
+## Conversion Smoke Test
+
+The converted `model.safetensors` was loaded with
+`AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`:
+
+| Check | Result |
+| --- | --- |
+| `model.safetensors` size | 2.1 GB |
+| HF tensor count | 380 |
+| Missing keys | 0 |
+| Unexpected keys | 0 |
+| Mismatched keys | 0 |
+| Loaded parameters | 1,088,124,920 |
+
+Greedy decode was compared against the source Megatron checkpoint using the
+same Pangolin tokenizer and direct full-prefix forward path:
+
+| Prompt | Match |
+| --- | --- |
+| `台灣的夜市文化很有特色，因為` | 24 / 24 generated tokens matched |
+| `人工智慧在台灣的應用` | 21 / 24 generated tokens matched |
+
+The second prompt diverged at a near-tie. At the divergence prefix, Megatron's
+top two logits were both printed as 19.625 (`屬於`, `個`) and Megatron selected
+`個`; HF CUDA selected `屬於` with top logits 19.75 vs 19.625. This is a
+precision-path argmax flip, not a missing-weight or shape-load failure.
 
 ## Internal Evaluation Snapshot
 
@@ -136,12 +171,10 @@ for user-facing assistant applications.
 
 ## Limitations
 
-- HF-compatible weights are pending conversion from Megatron distributed
-  checkpoints.
 - The 1M setting is an inference-time RoPE extrapolation config, not native 1M
   training.
-- The reference implementation uses a self-contained PyTorch Mamba-style mixer;
-  production kernels require a separate runtime integration.
+- CPU-only Mamba uses a PyTorch fallback. CUDA with `mamba_ssm` gives the
+  closest Megatron-compatible decode path.
 - Base-model generation may repeat or drift without decoding constraints or
   instruction tuning.
 - Raw token-level PPL should not be compared across tokenizers.
