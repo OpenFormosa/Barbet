@@ -18,53 +18,11 @@ license: other
 
 # Barbet 1B Base
 
-`voidful/barbet-1b-base` is the Hugging Face packaging target for the Barbet
-1B R2 base model from the Open Formosa training stack. Barbet is a hybrid
-decoder-only causal LM with global attention, sliding-window attention, and
-Mamba-style sequence mixer layers.
+`openformosa/barbet-1b-base` 是 Barbet 1B 基礎模型在 Hugging Face 上的封裝版本。Barbet 是一個 decoder-only 的混合式因果語言模型，預設使用 `openformosa/PangolinTokenizer` 詞彙表。
 
-## Current Hub Status
+## 上下文長度
 
-This publication contains HF-compatible `safetensors` weights converted from
-the internal Megatron `torch_dist` checkpoint
-`open_formosa_1b_r2_phase3_ctx256k_best_i128_earlypos_sft_lr5e7_cp8_1node_c019_20260615`
-at iteration 96, plus config and Transformers remote-code files.
-
-The exported weights contain the main causal-LM path. Megatron MTP auxiliary
-heads were used during training but are not exported because they are not used
-for next-token generation.
-
-## Architecture
-
-| Field | Value |
-| --- | ---: |
-| Model family | Barbet / Taiwan-Omni-1B-R2 |
-| Layers | 28 |
-| Hidden size | 1536 |
-| FFN size | 5120 |
-| Attention heads | 16 |
-| KV heads | 2 |
-| Head dim | 128 |
-| Vocab size | 114944 |
-| Tokenizer | `voidful/PangolinTokenizer` |
-| Embedding / LM head | tied |
-| RoPE theta | 10000000 |
-| Sliding window | 8192 |
-| Global attention layers | 0, 4, 8, 12, 16, 20, 24 |
-| Mamba-style layers | 3, 7, 11, 15, 19, 23, 27 |
-| QK logit clipping | disabled |
-| Attention sink | disabled |
-
-The layer motif repeats every four layers:
-
-```text
-global attention -> sliding attention -> sliding attention -> mamba-style mixer
-```
-
-## Context Length
-
-The training target for the 1B base is 256K context. The 1M config is an
-inference-time extrapolation config for the same 1B weights:
+1B 基礎模型的目標上下文長度是 256K。另外提供一個推論時的 1M 外推設定，使用同一份 1B 權重：
 
 ```json
 {
@@ -77,104 +35,43 @@ inference-time extrapolation config for the same 1B weights:
 }
 ```
 
-This is not a claim of native 1M pretraining. Practical 1M inference also needs
-an optimized long-context runtime; the bundled PyTorch reference path can
-express the RoPE scaling but global attention prefill remains quadratic.
+這並不是原生的 1M 預訓練。實務上要跑到 1M 等級的長上下文，仍需要額外經過最佳化的長上下文執行環境。
 
-## Loading
+## 載入方式
 
-Config inspection:
+只檢視設定：
 
 ```python
 from transformers import AutoConfig
 
-config = AutoConfig.from_pretrained("voidful/barbet-1b-base", trust_remote_code=True)
+config = AutoConfig.from_pretrained("openformosa/barbet-1b-base", trust_remote_code=True)
 print(config.max_position_embeddings)
 ```
 
-Once converted weights are present:
+載入權重：
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("voidful/PangolinTokenizer")
+tokenizer = AutoTokenizer.from_pretrained("openformosa/PangolinTokenizer")
 model = AutoModelForCausalLM.from_pretrained(
-    "voidful/barbet-1b-base",
+    "openformosa/barbet-1b-base",
     trust_remote_code=True,
     torch_dtype="auto",
     device_map="auto",
 )
 ```
 
-The Hub `config.json` is the native 256K checkpoint config for decode parity.
-The 1M extrapolation config is kept as `config_1m_extension.json`; both configs
-use the same 1B R2 weight shapes.
+Hub 上的 `config.json` 是原生 256K 的設定；1M 外推設定保留成 `config_1m_extension.json`，兩份設定使用同一份 1B 權重。
 
-For closest Megatron decode parity, run on CUDA with `mamba_ssm` available so
-the remote-code model uses the fused Mamba2 scan and gated RMSNorm path. Without
-`mamba_ssm`, the model falls back to a self-contained PyTorch Mamba path that is
-intended for portability and smoke tests.
+若要得到最接近原始模型的解碼結果，請在 CUDA 上執行並安裝 `mamba_ssm`。沒有 `mamba_ssm` 時，模型會改用內建、可攜性較高的 PyTorch Mamba 路徑。
 
-## Conversion Smoke Test
+## 適用範圍
 
-The converted `model.safetensors` was loaded with
-`AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`:
+Barbet 1B Base 是一個基礎語言模型，適合用於正體中文、多語預訓練，以及長上下文檢索行為等研究。它不是經過指令微調的助理模型；若要做面向使用者的助理應用，請改用經過指令微調或安全對齊的版本。
 
-| Check | Result |
-| --- | --- |
-| `model.safetensors` size | 2.1 GB |
-| HF tensor count | 380 |
-| Missing keys | 0 |
-| Unexpected keys | 0 |
-| Mismatched keys | 0 |
-| Loaded parameters | 1,088,124,920 |
+## 使用限制
 
-Greedy decode was compared against the source Megatron checkpoint using the
-same Pangolin tokenizer and direct full-prefix forward path:
-
-| Prompt | Match |
-| --- | --- |
-| `台灣的夜市文化很有特色，因為` | 24 / 24 generated tokens matched |
-| `人工智慧在台灣的應用` | 21 / 24 generated tokens matched |
-
-The second prompt diverged at a near-tie. At the divergence prefix, Megatron's
-top two logits were both printed as 19.625 (`屬於`, `個`) and Megatron selected
-`個`; HF CUDA selected `屬於` with top logits 19.75 vs 19.625. This is a
-precision-path argmax flip, not a missing-weight or shape-load failure.
-
-## Internal Evaluation Snapshot
-
-These numbers are internal checkpoint-evaluation snapshots, not final public
-benchmark claims. For cross-tokenizer comparisons such as MiniCPM, raw token
-PPL is not comparable; use byte-normalized metrics such as bits per byte.
-
-| Metric | Barbet 1B snapshot | Notes |
-| --- | ---: | --- |
-| TAIDE normalized LM loss | 1.066 bits/byte | tokenizer-normalized |
-| Probability probes | 387 / 500 | internal QA-style probability probe |
-| NIAH 32K | 32 / 32 | native context |
-| NIAH 64K | 28 / 32 | native context |
-| NIAH 128K | 25 / 32 | native context |
-| NIAH 256K | 20-23 / 32 | native context, varies by run |
-| NIAH 512K | 24 / 32 | extrapolated evaluation |
-| NIAH 1M | 20-21 / 32 | extrapolated evaluation |
-
-Needle-in-a-haystack mostly measures exact retrieval. It does not prove robust
-multi-hop reasoning or full-context understanding at 1M length.
-
-## Intended Use
-
-Barbet 1B Base is a base language model for research on Traditional Chinese,
-multilingual pretraining, and long-context retrieval behavior. It is not an
-instruction-tuned assistant. Use an instruction-tuned or safety-aligned variant
-for user-facing assistant applications.
-
-## Limitations
-
-- The 1M setting is an inference-time RoPE extrapolation config, not native 1M
-  training.
-- CPU-only Mamba uses a PyTorch fallback. CUDA with `mamba_ssm` gives the
-  closest Megatron-compatible decode path.
-- Base-model generation may repeat or drift without decoding constraints or
-  instruction tuning.
-- Raw token-level PPL should not be compared across tokenizers.
+- 1M 設定是推論時的 RoPE 外推設定，不是原生的 1M 訓練。
+- 只有 CPU 時，Mamba 會使用 PyTorch 後備路徑；在 CUDA 上搭配 `mamba_ssm` 才能得到最接近原始模型的解碼路徑。
+- 基礎模型在沒有解碼限制或指令微調的情況下，生成內容可能會重複或偏離主題。

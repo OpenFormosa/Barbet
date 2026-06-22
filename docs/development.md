@@ -1,30 +1,20 @@
-# Development
+# 開發
 
-## Install
+## 安裝
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## Tests
+## 測試
 
 ```bash
 pytest -q
 ```
 
-The tests cover:
+## 簡易驗證
 
-- tiny config construction;
-- forward pass;
-- causal LM loss;
-- tied and untied embedding/LM-head behavior;
-- `save_pretrained`/`from_pretrained` roundtrip with tied weights;
-- KV/conv cache: incremental decoding matches the full forward, and cached
-  `generate()` matches uncached (greedy with left padding, beam search);
-- 300M and 1B factory config validation;
-- the 1M-extension RoPE scaling preset.
-
-## Smoke Test
+可以用一個極小的設定快速確認模型能正常建立與前向傳遞：
 
 ```python
 import torch
@@ -52,13 +42,3 @@ ids = torch.randint(0, 128, (1, 8))
 out = model(input_ids=ids, labels=ids)
 assert out.logits.shape == (1, 8, 128)
 ```
-
-## Style
-
-Keep this repository independent from the training runtime:
-
-- do not commit checkpoints;
-- do not commit Slurm logs;
-- do not commit Megatron work directories;
-- keep Hugging Face remote-code files at repository root;
-- keep package source under `src/barbet`.

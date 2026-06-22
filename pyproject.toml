@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "barbet"
 version = "0.1.0"
-description = "Hugging Face Transformers modeling code for Barbet 300M and 1B causal language models."
+description = "Hugging Face Transformers modeling code for the Barbet 1B causal language model."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

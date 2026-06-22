@@ -2,7 +2,7 @@
 
 Barbet mirrors the Open Formosa R2 architecture (Taiwan-Omni R2): a hybrid
 decoder with a repeating ``global, sliding, sliding, mamba2`` block motif,
-tied embedding/LM-head, and the frozen voidful/PangolinTokenizer vocabulary.
+tied embedding/LM-head, and the frozen openformosa/PangolinTokenizer vocabulary.
 """
 
 from __future__ import annotations
@@ -110,30 +110,6 @@ class BarbetConfig(PretrainedConfig):
         self.mtp_loss_weights = {str(int(k)): float(v) for k, v in dict(weights).items()}
         self.unk_token_id = unk_token_id
         self._validate()
-
-    @classmethod
-    def barbet_300m(
-        cls,
-        vocab_size: int = MEGATRON_PADDED_VOCAB_SIZE,
-        max_position_embeddings: int = 8192,
-    ) -> "BarbetConfig":
-        """Taiwan-Omni-300M-R2 shape: tied vocab tables fund a 20-layer body."""
-        return cls(
-            vocab_size=vocab_size,
-            hidden_size=1024,
-            intermediate_size=2816,
-            num_hidden_layers=20,
-            num_attention_heads=8,
-            num_key_value_heads=2,
-            head_dim=128,
-            max_position_embeddings=max_position_embeddings,
-            sliding_window_size=2048,
-            global_attention_layers=(0, 4, 8, 12, 16),
-            mamba_layers=(3, 7, 11, 15, 19),
-            qk_logit_clip=False,
-            attention_sink=False,
-            tie_word_embeddings=True,
-        )
 
     @classmethod
     def barbet_1b(

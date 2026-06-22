@@ -1,56 +1,36 @@
 # Barbet
 
-Barbet is a Hugging Face Transformers implementation of the Barbet causal
-language model family. The repository provides remote-code compatible modeling
-classes and three configuration presets: Barbet 300M, Barbet 1B, and a Barbet
-1B 1M research-extension config. The architecture mirrors the R2 revision of the
-[Open Formosa](https://github.com/voidful/open_formosa) training stack
-(Taiwan-Omni-300M-R2 / Taiwan-Omni-1B-R2).
+Barbet 是 Barbet 因果語言模型系列的 Hugging Face Transformers 實作。這個專案提供可透過 remote code 載入的模型類別，以及兩組設定預設：Barbet 1B，還有作為研究延伸用途的 Barbet 1B 1M。
 
-This repository is intentionally lightweight. It contains model code, config
-metadata, and checkpoint-conversion tooling. Megatron runtime artifacts remain
-in the Open Formosa training stack.
+本專案刻意保持輕量，只包含模型程式碼、設定檔，以及檢查點轉換工具。
 
-## Contents
+## 內容
 
 - `BarbetConfig`
 - `BarbetModel`
 - `BarbetForCausalLM`
-- `configs/barbet_300m/config.json`
 - `configs/barbet_1b/config.json`
 - `configs/barbet_1b_1m/config.json`
-- remote-code files for Hugging Face Hub loading:
+- 供 Hugging Face Hub 以 remote code 載入的檔案：
   - `configuration_barbet.py`
   - `modeling_barbet.py`
 
-## Model Summary
+## 模型簡介
 
-Barbet is a decoder-only hybrid language model with:
+Barbet 是一個 decoder-only 的因果語言模型。對使用者來說，需要知道的重點是：
 
-- grouped-query attention
-- QK RMSNorm
-- RoPE with large-context theta
-- a repeating `global, sliding, sliding, mamba` layer motif
-- local sliding-window attention layers
-- SwiGLU feed-forward layers
-- tied token embeddings and LM head (R2 rebalance: the saved vocab budget
-  funds extra depth)
-- the frozen `voidful/PangolinTokenizer` vocabulary (114944 padded entries)
-- incremental decoding with a hybrid KV/conv-state cache (rolling window for
-  sliding layers, O(1) Mamba steps)
-- optional multi-token prediction loss for training
-- optional QK logit clipping and learnable attention sink (off in the shipped
-  R2 configs, matching the validated upstream recipe)
-- an optional `mamba_ssm` GPU path for Megatron-compatible Mamba2 scan kernels,
-  with a self-contained PyTorch fallback when those kernels are unavailable
+- 使用固定的 `openformosa/PangolinTokenizer` 詞彙表
+- 詞嵌入與 LM head 共用權重
+- 支援逐步解碼（incremental decoding）的混合式快取，生成長序列時更省記憶體
 
-The 300M config (20 layers, 8K context) is the proxy model family used for
-systems validation. The 1B config (28 layers, 256K context) is the target
-family configuration. The 1B 1M config keeps the same weights and enables
-linear RoPE scaling x4 from the 256K base for inference-time extrapolation
-experiments.
+提供的兩組設定：
 
-## Quick Start
+| 設定 | 用途 | 上下文長度 |
+| --- | --- | ---: |
+| Barbet 1B | 主要目標模型 | 256K |
+| Barbet 1B 1M | 推論時的長上下文外推研究設定（與 1B 共用權重） | 1M |
+
+## 快速開始
 
 ```bash
 pip install -e ".[dev]"
@@ -60,28 +40,26 @@ pytest -q
 ```python
 from barbet import BarbetConfig, BarbetForCausalLM
 
-config = BarbetConfig.barbet_300m()
+config = BarbetConfig.barbet_1b()
 model = BarbetForCausalLM(config)
 ```
 
-## Hugging Face Loading
+## 從 Hugging Face 載入
 
-After converted `safetensors` and the remote-code files are uploaded to a
-Hugging Face model repository, the model can be loaded with:
+當轉換後的 `safetensors` 與 remote code 檔案上傳到 Hugging Face 模型庫後，可以這樣載入：
 
 ```python
 from transformers import AutoConfig, AutoModelForCausalLM
 
-config = AutoConfig.from_pretrained("voidful/barbet-1b-base", trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained("voidful/barbet-1b-base", trust_remote_code=True)
+config = AutoConfig.from_pretrained("openformosa/barbet-1b-base", trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained("openformosa/barbet-1b-base", trust_remote_code=True)
 ```
 
-The config files under `configs/` already include the `auto_map` fields required
-for remote-code loading.
+`configs/` 底下的設定檔已經包含 remote code 載入所需的 `auto_map` 欄位。
 
-## Checkpoint Conversion
+## 檢查點轉換
 
-Production Megatron `torch_dist` checkpoints can be converted with:
+可以用以下指令把 Megatron `torch_dist` 檢查點轉換成 Hugging Face 格式：
 
 ```bash
 python scripts/convert_torch_dist_to_hf.py \
@@ -90,23 +68,17 @@ python scripts/convert_torch_dist_to_hf.py \
   --force
 ```
 
-The converter exports the main causal-LM path to `model.safetensors`. Megatron
-MTP auxiliary heads are training-only and are intentionally not exported.
+轉換器會把主要的 causal-LM 權重輸出成 `model.safetensors`。
 
-## Documentation
+## 文件
 
-- [Architecture](docs/architecture.md)
-- [Configuration](docs/configuration.md)
-- [Transformers Usage](docs/transformers_usage.md)
-- [Checkpoint Conversion](docs/checkpoint_conversion.md)
-- [Long Context](docs/long_context.md)
-- [Development](docs/development.md)
+- [設定](docs/configuration.md)
+- [Transformers 使用方式](docs/transformers_usage.md)
+- [檢查點轉換](docs/checkpoint_conversion.md)
+- [長上下文](docs/long_context.md)
+- [開發](docs/development.md)
 
-## Current Limitations
+## 使用限制
 
-- CPU-only Mamba uses the PyTorch fallback. For closest Megatron decode parity,
-  install `mamba_ssm` and run on CUDA so the model uses the fused Mamba2 scan
-  and gated RMSNorm path.
-- The bundled PyTorch reference path can express the 1M RoPE extension, but
-  practical 1M prefill still needs an optimized external long-context runtime.
-  Global attention layers are quadratic without such a runtime.
+- 只有 CPU 時，Mamba 會使用 PyTorch 後備路徑。若要得到最接近原始模型的解碼結果，請安裝 `mamba_ssm` 並在 CUDA 上執行。
+- 內建的 PyTorch 參考路徑雖然可以表達 1M 的 RoPE 延伸，但實務上要跑到 1M 等級的長上下文，仍需要額外經過最佳化的長上下文執行環境。

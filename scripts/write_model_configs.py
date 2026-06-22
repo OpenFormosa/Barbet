@@ -65,7 +65,6 @@ def postprocess_config_json(config: BarbetConfig, path: Path) -> None:
 
 
 def main() -> None:
-    write_config(BarbetConfig.barbet_300m(), ROOT / "configs" / "barbet_300m")
     write_config(BarbetConfig.barbet_1b(), ROOT / "configs" / "barbet_1b")
     write_config(BarbetConfig.barbet_1b_1m_extension(), ROOT / "configs" / "barbet_1b_1m")
 

@@ -104,13 +104,6 @@ def test_generate_with_cache_matches_uncached() -> None:
 
 
 def test_factory_configs_validate() -> None:
-    config_300m = BarbetConfig.barbet_300m()
-    assert config_300m.num_hidden_layers == 20
-    assert config_300m.global_attention_layers == [0, 4, 8, 12, 16]
-    assert config_300m.mamba_layers == [3, 7, 11, 15, 19]
-    assert config_300m.max_position_embeddings == 8192
-    assert config_300m.sliding_window_size == 2048
-
     config_1b = BarbetConfig.barbet_1b()
     assert config_1b.num_hidden_layers == 28
     assert config_1b.global_attention_layers == [0, 4, 8, 12, 16, 20, 24]
@@ -118,15 +111,14 @@ def test_factory_configs_validate() -> None:
     assert config_1b.max_position_embeddings == 262144
     assert config_1b.sliding_window_size == 8192
 
-    for config in (config_300m, config_1b):
-        assert config.vocab_size == 114944
-        assert config.tie_word_embeddings is True
-        assert config.qk_logit_clip is False
-        assert config.attention_sink is False
-        assert config.unk_token_id == 114688
-        assert config.bos_token_id == 114689
-        assert config.eos_token_id == 114690
-        assert config.pad_token_id == 114691
+    assert config_1b.vocab_size == 114944
+    assert config_1b.tie_word_embeddings is True
+    assert config_1b.qk_logit_clip is False
+    assert config_1b.attention_sink is False
+    assert config_1b.unk_token_id == 114688
+    assert config_1b.bos_token_id == 114689
+    assert config_1b.eos_token_id == 114690
+    assert config_1b.pad_token_id == 114691
 
 
 def test_1m_extension_rope_scaling() -> None:

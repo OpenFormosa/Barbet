@@ -1,51 +1,17 @@
-# Long Context
+# 長上下文
 
-Barbet 1B targets a 256K product context before any 1M extension. Barbet 300M
-is a short-context proxy for systems validation.
+Barbet 1B 的目標上下文長度是 256K，另外提供一個推論時的 1M 外推設定。
 
-## 256K Base (1B)
+## 各設定的上下文長度
 
-The 1B config sets:
+| 設定 | 最大上下文長度 | 滑動視窗 |
+| --- | ---: | ---: |
+| `barbet_1b` | 262144 | 8192 |
+| `barbet_1b_1m` | 1048576 | 8192 |
 
-```json
-"max_position_embeddings": 262144
-```
+## 1M 外推設定
 
-The current training curriculum is:
-
-```text
-32K -> 64K -> 128K -> 256K
-```
-
-Sliding attention layers keep a local window of 8192 tokens. Global attention
-layers remain full causal attention.
-
-## 8K Proxy (300M)
-
-The 300M R2 config trains at 8K context with a 2048-token sliding window:
-
-```json
-"max_position_embeddings": 8192,
-"sliding_window_size": 2048
-```
-
-## 1M Extension
-
-The intended 1M path is not normal pretraining. It is a guarded research
-extension from a validated 256K base.
-
-The planned direction is:
-
-```text
-256K base -> linear RoPE x4 metadata -> external sparse/compressed-memory runtime
-```
-
-A native full-attention 1M run is not a default config because global attention
-layers would still be expensive and could create misleading systems results.
-
-## RoPE Scaling
-
-For a 1M research extension from 256K, linear RoPE scaling uses:
+1M 設定不是原生的長上下文預訓練，而是從 256K 的 1B 權重做推論時外推。它透過線性 RoPE 縮放，把可用的上下文長度延伸到 1M：
 
 ```json
 "rope_scaling": {
@@ -55,22 +21,23 @@ For a 1M research extension from 256K, linear RoPE scaling uses:
 }
 ```
 
-This metadata is supported by `BarbetConfig`, but the shipped 300M and 1B base
-configs do not enable scaling. `BarbetConfig.barbet_1b_1m_extension()` produces
-the 1M research configuration (`max_position_embeddings=1048576` with the
-linear scaling block above), mirroring
-`configs/model/open_formosa_1b_r2_1m_extension.yaml` upstream. The bundled
-PyTorch forward applies linear position scaling; the upstream CSA/HCA-lite
-compressed-memory mode remains the intended route for practical 1M
-experiments.
+可以用工廠方法取得這份設定：
 
-The generated repository config is:
+```python
+from barbet import BarbetConfig
+
+config = BarbetConfig.barbet_1b_1m_extension()
+print(config.max_position_embeddings)  # 1048576
+```
+
+對應的設定檔是：
 
 ```text
 configs/barbet_1b_1m/config.json
 ```
 
-It is weight-compatible with the 256K Barbet 1B checkpoint because RoPE does
-not add learned position parameters. The tradeoff is runtime: without a sparse,
-DCA/YaRN-style, or compressed-memory engine, the global attention layers still
-make 1M prefill impractical for normal Transformers inference.
+因為 RoPE 不會額外增加學到的位置參數，所以 1M 設定與 256K 的 Barbet 1B 權重相容，可以直接共用同一份權重。
+
+## 使用須知
+
+實務上要跑到 1M 等級的長上下文，仍需要額外經過最佳化的長上下文執行環境。內建的 PyTorch 參考路徑雖然可以表達 RoPE 縮放，但全域注意力（global attention）層在這個長度下成本仍然很高，用一般的 Transformers 推論不容易實際跑到 1M。
