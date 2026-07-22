@@ -94,7 +94,7 @@ python scripts/convert_torch_dist_to_hf.py \
 - [檢查點轉換](docs/checkpoint_conversion.md)
 - [長上下文](docs/long_context.md)
 - [開發](docs/development.md)
-- [授權](.github/LICENSE.md)
+- [授權](LICENSE.md)
 - [Model card](model_cards\barbet-1b-base\README.md)
 
 ## 使用限制
