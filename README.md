@@ -13,7 +13,7 @@ Barbet 是 Barbet 因果語言模型系列的 Hugging Face Transformers 實作�
 </p>
 <p align="center">
 <img src="https://img.shields.io/badge/Python-%3E%3D3.10-blue?logo=python&logoColor" alt="Python >=3.10">
-<a href=".github/LICENSE.md">
+<a href="LICENSE.md">
     <img src="https://img.shields.io/badge/license-Apache%202.0-yellow?logo=apache&logoColor" alt="Apache 2.0">
   </a>
 <p align="center">
