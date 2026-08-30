@@ -34,7 +34,7 @@ license: other
 }
 ```
 
-它不是舊版 256K checkpoint 的推論時 RoPE 外推，而是實際經過 exact-1M continued pretraining 的原生 1M checkpoint。完整訓練路徑見[〈Barbet 1B Base：我們如何把 256K 外推研究模型變成原生 stable 1M〉](../../docs/barbet_1b_native_1m.md)。
+它不是舊版 256K checkpoint 的推論時 RoPE 外推，而是實際經過 exact-1M continued pretraining 的原生 1M checkpoint。完整訓練路徑見 OpenFormosa 官網的[〈Barbet 1B Base 的原生 1M：從位置外推到可驗證的遠距資訊使用〉](https://openformosa.com/blog/2026/08/30/barbet-1b-native-1m/)。
 
 ## Release 結果
 

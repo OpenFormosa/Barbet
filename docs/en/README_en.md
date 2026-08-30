@@ -1,6 +1,6 @@
 # Barbet
 
-> **Release update (2026-08-30):** the current `OpenFormosa/barbet-1b-base` checkpoint is `final-global-barbet-iter7008-stable-1m-v11`, trained and evaluated at a native 1,048,576-token context. The 256K / 1M-RoPE-scaling presets documented below are retained as legacy R2 research configs. See the detailed [native-1M training article](../barbet_1b_native_1m.md).
+> **Release update (2026-08-30):** the current `OpenFormosa/barbet-1b-base` checkpoint is `final-global-barbet-iter7008-stable-1m-v11`, trained and evaluated at a native 1,048,576-token context. The 256K / 1M-RoPE-scaling presets documented below are retained as legacy R2 research configs. See the detailed [native-1M training and evaluation article](https://openformosa.com/blog/2026/08/30/barbet-1b-native-1m/).
 
 Barbet is the Hugging Face Transformers implementation of the Barbet family of causal language models. The current Hugging Face release is native 1M; this repository also retains two legacy R2 configuration presets for reproducibility.
 
@@ -94,7 +94,7 @@ The converter exports the main causal language model weights as `model.safetenso
 * [Transformers Usage](../transformers_usage.md)
 * [Checkpoint Conversion](../checkpoint_conversion.md)
 * [Long Context](../long_context.md)
-* [Native-1M Training Article](../barbet_1b_native_1m.md)
+* [Native-1M Training and Evaluation Article](https://openformosa.com/blog/2026/08/30/barbet-1b-native-1m/)
 * [Development](../development.md)
 * [License](../../LICENSE)
 * [Model Card](../../model_cards/barbet-1b-base/README.md)

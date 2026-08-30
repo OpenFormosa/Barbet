@@ -48,7 +48,7 @@ Barbet 是一個 decoder-only 的因果語言模型，因此有以下特點：
 | `configs/barbet_1b/` | 原始 R2／legacy preset | 原生 256K |
 | `configs/barbet_1b_1m/` | 原始 R2 的推論外推研究 preset | 1M RoPE 外推 |
 
-正式 `iter7008` 實際在 exact 1M sequences 上 continued-pretrain；它不是把 legacy 256K 權重只靠 RoPE scaling 拉到 1M。完整訓練路徑、能力 gate 與限制見[〈Barbet 1B Base：我們如何把 256K 外推研究模型變成原生 stable 1M〉](docs/barbet_1b_native_1m.md)。
+正式 `iter7008` 實際在 exact 1M sequences 上 continued-pretrain；它不是把 legacy 256K 權重只靠 RoPE scaling 拉到 1M。完整訓練路徑、能力 gate 與限制見 OpenFormosa 官網的[〈Barbet 1B Base 的原生 1M：從位置外推到可驗證的遠距資訊使用〉](https://openformosa.com/blog/2026/08/30/barbet-1b-native-1m/)。
 
 ## 快速開始
 
@@ -96,7 +96,7 @@ python scripts/convert_torch_dist_to_hf.py \
 - [Transformers 使用方式](docs/transformers_usage.md)
 - [檢查點轉換](docs/checkpoint_conversion.md)
 - [長上下文](docs/long_context.md)
-- [如何讓 Barbet 1B Base 做到原生 stable 1M](docs/barbet_1b_native_1m.md)
+- [Barbet 1B Base 的原生 1M：完整訓練與評測報告](https://openformosa.com/blog/2026/08/30/barbet-1b-native-1m/)
 - [開發](docs/development.md)
 - [授權](LICENSE)
 - [Model card](model_cards/barbet-1b-base/README.md)
