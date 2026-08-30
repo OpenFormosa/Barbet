@@ -16,7 +16,7 @@ Repository 內的 `barbet_1b` 與 `barbet_1b_1m` 則是原始 R2 的 legacy pres
 | Effective long-task families | 6/7 |
 | Base-model BPB retention | 6/6 buckets |
 
-完整架構演進、訓練 token ledger、能力評估與限制，請見[〈Barbet 1B Base：我們如何把 256K 外推研究模型變成原生 stable 1M〉](barbet_1b_native_1m.md)。
+完整架構演進、訓練 token ledger、能力評估與限制，請見 OpenFormosa 官網的[〈Barbet 1B Base 的原生 1M：從位置外推到可驗證的遠距資訊使用〉](https://openformosa.com/blog/2026/08/30/barbet-1b-native-1m/)。
 
 ## Legacy presets
 
