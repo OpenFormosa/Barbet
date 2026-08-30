@@ -1,6 +1,6 @@
 # Barbet
 
-Barbet 是 Barbet 因果語言模型系列的 Hugging Face Transformers 實作。這個專案提供可透過 remote code 載入的模型類別，以及兩組設定預設：Barbet 1B，還有作為研究延伸用途的 Barbet 1B 1M。
+Barbet 是 Barbet 因果語言模型系列的 Hugging Face Transformers 實作。Hugging Face 上目前發布的 `OpenFormosa/barbet-1b-base` 是 `final-global-barbet-iter7008-stable-1m-v11`：一個約 1.119B parameters、原生支援 1,048,576-token context 的 causal base model。這個 repository 也保留原始 R2 的 256K 與 1M RoPE 外推設定，供舊版研究重現。
 <p align="center">
   <a href="docs/en/README_en.md">English README
 </p>
@@ -8,7 +8,7 @@ Barbet 是 Barbet 因果語言模型系列的 Hugging Face Transformers 實作�
   <a href="https://huggingface.co/OpenFormosa/barbet-1b-base">
     <img src="https://img.shields.io/badge/Hugging%20Face-barbet--1b--base-FFD21E?logo=huggingface&logoColor" alt="Hugging Face Barbet 1B Base">
   </a>
-  <img src="https://img.shields.io/badge/Context%20Window-256k-orange?logo=openai&logoColor=white" alt="Context Window 256k">
+  <img src="https://img.shields.io/badge/Native%20Context-1M-orange?logo=openai&logoColor=white" alt="Native Context 1M">
   
 </p>
 <p align="center">
@@ -36,16 +36,19 @@ Barbet 是 Barbet 因果語言模型系列的 Hugging Face Transformers 實作�
 
 Barbet 是一個 decoder-only 的因果語言模型，因此有以下特點：
 
-- 使用固定的 `openformosa/PangolinTokenizer` 詞彙表
+- 使用固定的 `OpenFormosa/PangolinTokenizer` 詞彙表
 - 詞嵌入與 LM head 共用權重
 - 支援逐步解碼（incremental decoding）的混合式快取，生成長序列時更省記憶體
 
-模型提供的兩組設定：
+目前 Hugging Face release 與 repository 內建 presets 的關係如下：
 
 | 設定 | 用途 | 上下文長度 |
 | --- | --- | ---: |
-| Barbet 1B | 主要目標模型 | 256K |
-| Barbet 1B 1M | 推論時的長上下文外推研究設定（與 1B 共用權重） | 1M |
+| `OpenFormosa/barbet-1b-base` | `iter7008` 正式權重與隨附 release config | **原生 1M** |
+| `configs/barbet_1b/` | 原始 R2／legacy preset | 原生 256K |
+| `configs/barbet_1b_1m/` | 原始 R2 的推論外推研究 preset | 1M RoPE 外推 |
+
+正式 `iter7008` 實際在 exact 1M sequences 上 continued-pretrain；它不是把 legacy 256K 權重只靠 RoPE scaling 拉到 1M。完整訓練路徑、能力 gate 與限制見[〈Barbet 1B Base：我們如何把 256K 外推研究模型變成原生 stable 1M〉](docs/barbet_1b_native_1m.md)。
 
 ## 快速開始
 
@@ -68,8 +71,8 @@ model = BarbetForCausalLM(config)
 ```python
 from transformers import AutoConfig, AutoModelForCausalLM
 
-config = AutoConfig.from_pretrained("openformosa/barbet-1b-base", trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained("openformosa/barbet-1b-base", trust_remote_code=True)
+config = AutoConfig.from_pretrained("OpenFormosa/barbet-1b-base", trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained("OpenFormosa/barbet-1b-base", trust_remote_code=True)
 ```
 
 `configs/` 底下的設定檔已經包含 remote code 載入所需的 `auto_map` 欄位。
@@ -93,11 +96,12 @@ python scripts/convert_torch_dist_to_hf.py \
 - [Transformers 使用方式](docs/transformers_usage.md)
 - [檢查點轉換](docs/checkpoint_conversion.md)
 - [長上下文](docs/long_context.md)
+- [如何讓 Barbet 1B Base 做到原生 stable 1M](docs/barbet_1b_native_1m.md)
 - [開發](docs/development.md)
-- [授權](LICENSE.md)
-- [Model card](model_cards\barbet-1b-base\README.md)
+- [授權](LICENSE)
+- [Model card](model_cards/barbet-1b-base/README.md)
 
 ## 使用限制
 
 - 只有 CPU 時，Mamba 會使用 PyTorch 後備路徑。若要得到最接近原始模型的解碼結果，請安裝 `mamba_ssm` 並在 CUDA 上執行。
-- 內建的 PyTorch 參考路徑雖然可以表達 1M 的 RoPE 延伸，但實務上要跑到 1M 等級的長上下文，仍需要額外經過最佳化的長上下文執行環境。
+- 正式模型雖已在 exact 1M 上完成訓練與評估，實務上執行 1M 仍需要足夠 GPU memory、context parallelism 與相容的最佳化 kernels；單張消費級 GPU 通常不可行。

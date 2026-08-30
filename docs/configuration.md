@@ -2,6 +2,8 @@
 
 Barbet 使用 `BarbetConfig`，它是標準的 Transformers `PretrainedConfig`。
 
+> 注意：本 repository 的兩組 presets 對應原始 R2／legacy 研究設定。Hugging Face 上目前發布的 `final-global-barbet-iter7008-stable-1m-v11` 是 29 層、原生 1M 的 checkpoint，應直接使用模型 repository 隨權重發布的 `config.json`。完整差異見[長上下文文件](long_context.md)。
+
 ## 預設設定
 
 | 設定 | 上下文長度 | 滑動視窗 |
@@ -51,4 +53,4 @@ config_1b = BarbetConfig.barbet_1b()
 config_1m = BarbetConfig.barbet_1b_1m_extension()
 ```
 
-`barbet_1b_1m_extension()` 是推論時用的長上下文外推設定，與 256K 的 1B 權重相容，只調整 RoPE 縮放資訊與最大上下文長度，並不是原生的 1M 預訓練。詳細說明請見 [長上下文](long_context.md)。
+`barbet_1b_1m_extension()` 是原始 R2 權重的推論時長上下文外推設定，與 256K legacy 權重相容，只調整 RoPE 縮放資訊與最大上下文長度。它不是目前 Hugging Face iter7008 的 native-1M release config。詳細說明請見 [長上下文](long_context.md)。
