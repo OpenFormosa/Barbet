@@ -13,7 +13,7 @@ tags:
 - mamba
 - open-formosa
 - barbet
-license: other
+license: apache-2.0
 ---
 
 # Barbet 1B Base — Stable Native 1M
@@ -85,3 +85,9 @@ Barbet 1B Base 是一個基礎語言模型，適合用於正體中文、多語�
 - 真正執行 1M 需要足夠 GPU memory、context parallelism 與相容的最佳化 kernels；單張消費級 GPU 通常不可行。
 - 只有 CPU 時，Mamba 會使用 PyTorch 後備路徑；在 CUDA 上搭配 `mamba_ssm` 才能得到最接近原始模型的解碼路徑。
 - 基礎模型在沒有解碼限制或指令微調的情況下，生成內容可能會重複或偏離主題。
+
+## 授權 / License
+
+模型權重、程式碼與本模型卡以 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 釋出，© 2026 OpenFormosa contributors。使用時請遵守 [OpenFormosa 可接受使用政策](https://openformosa.com/acceptable-use/)。
+
+Weights, code, and this model card are released under the Apache License 2.0. Please follow the [OpenFormosa Acceptable Use Policy](https://openformosa.com/acceptable-use/).
