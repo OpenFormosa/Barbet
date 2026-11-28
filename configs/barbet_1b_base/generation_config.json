@@ -1,0 +1,7 @@
+{
+  "bos_token_id": 114689,
+  "eos_token_id": 114690,
+  "pad_token_id": 114691,
+  "do_sample": false,
+  "max_new_tokens": 2048
+}

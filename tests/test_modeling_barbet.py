@@ -124,11 +124,10 @@ def test_factory_configs_validate() -> None:
 def test_1m_extension_rope_scaling() -> None:
     config = BarbetConfig.barbet_1b_1m_extension()
     assert config.max_position_embeddings == 1048576
-    assert config.rope_scaling == {
-        "type": "linear",
-        "factor": 4.0,
-        "original_context_length": 262144,
-    }
+    assert config.rope_scaling["type"] == "llama3"
+    assert config.rope_scaling["factor"] == 4.0
+    assert config.rope_scaling["original_max_position_embeddings"] == 262144
+    assert config.rope_scaling["attention_scope"] == "global_only"
 
     loaded_from_transformers_5_style = BarbetConfig(
         rope_parameters={
@@ -137,4 +136,5 @@ def test_1m_extension_rope_scaling() -> None:
             "original_context_length": 262144,
         }
     )
-    assert loaded_from_transformers_5_style.rope_scaling == config.rope_scaling
+    assert loaded_from_transformers_5_style.rope_scaling["type"] == "linear"
+    assert loaded_from_transformers_5_style.rope_scaling["factor"] == 4.0

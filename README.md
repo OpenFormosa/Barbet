@@ -30,7 +30,7 @@ Barbet 就是這個底座。它使用台灣語言情境的 `OpenFormosa/Pangolin
 1. 安裝 Transformers：
 
    ```bash
-   pip install "transformers>=4.45" torch
+   pip install "transformers>=4.57" torch
    ```
 
 2. 從 Hugging Face 載入模型：
@@ -38,23 +38,25 @@ Barbet 就是這個底座。它使用台灣語言情境的 `OpenFormosa/Pangolin
    ```python
    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-   tokenizer = AutoTokenizer.from_pretrained("OpenFormosa/PangolinTokenizer")
+   tokenizer = AutoTokenizer.from_pretrained("OpenFormosa/barbet-1b-base", trust_remote_code=True)
    model = AutoModelForCausalLM.from_pretrained(
        "OpenFormosa/barbet-1b-base",
        trust_remote_code=True,
-       torch_dtype="auto",
+       dtype="auto",
        device_map="auto",
    )
    ```
 
 3. 執行 `print(model.config.max_position_embeddings)`，會印出 `1048576`。
 
+   `generate()`、批次生成與 `pipeline("text-generation")` 都能直接使用，詳見 [Transformers 使用方式](docs/transformers_usage.md)。
+
 ## 安裝
 
 | 項目 | 需求 |
 | --- | --- |
 | Python | 3.10 以上 |
-| 主要相依套件 | PyTorch ≥ 2.3、transformers ≥ 4.45 |
+| 主要相依套件 | PyTorch ≥ 2.3、transformers ≥ 4.57（已實測 4.57.6 與 5.24.1） |
 | 硬體 | CUDA GPU 建議搭配 `mamba_ssm`；只有 CPU 時使用 PyTorch 後備路徑 |
 
 從原始碼安裝並執行測試：
@@ -73,14 +75,14 @@ pytest -q
 ```python
 from barbet import BarbetConfig, BarbetForCausalLM
 
-config = BarbetConfig.barbet_1b()
+config = BarbetConfig.barbet_1b_base()
 model = BarbetForCausalLM(config)
 ```
 
 這個 repository 提供：
 
 - `BarbetConfig`、`BarbetModel`、`BarbetForCausalLM`
-- `configs/barbet_1b/config.json`、`configs/barbet_1b_1m/config.json`
+- `configs/barbet_1b_base/config.json`（與 Hub 權重相同）、`configs/barbet_1b/config.json`、`configs/barbet_1b_1m/config.json`
 - 供 Hugging Face Hub 以 remote code 載入的 `configuration_barbet.py` 與 `modeling_barbet.py`
 
 ### 只檢視設定
@@ -119,6 +121,7 @@ Barbet 是 decoder-only 的因果語言模型，有以下特點：
 | 設定 | 用途 | 前後文長度 |
 | --- | --- | ---: |
 | `OpenFormosa/barbet-1b-base` | 目前發布的 `iter7008` 權重與隨附設定 | **原生 1M** |
+| `configs/barbet_1b_base/` | 與 Hub 權重一起發布的設定副本 | **原生 1M** |
 | `configs/barbet_1b/` | 原始 R2 設定，供舊版研究重現 | 原生 256K |
 | `configs/barbet_1b_1m/` | 原始 R2 的推論外推研究設定 | 1M RoPE 外推 |
 

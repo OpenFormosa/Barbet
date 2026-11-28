@@ -2,7 +2,7 @@
 
 Barbet mirrors the Open Formosa R2 architecture (Taiwan-Omni R2): a hybrid
 decoder with a repeating ``global, sliding, sliding, mamba2`` block motif,
-tied embedding/LM-head, and the frozen openformosa/PangolinTokenizer vocabulary.
+tied embedding/LM-head, and the frozen OpenFormosa/PangolinTokenizer vocabulary.
 """
 
 from __future__ import annotations
@@ -23,7 +23,15 @@ BOS_TOKEN_ID = 114689
 EOS_TOKEN_ID = 114690
 PAD_TOKEN_ID = 114691
 
-ROPE_SCALING_TYPES = ("none", "linear", "yarn", "longrope")
+ROPE_SCALING_TYPES = (
+    "none",
+    "linear",
+    "llama3",
+    "longrope2",
+    "yarn",
+    "longrope",
+)
+ROPE_ATTENTION_SCOPES = ("all_attention", "global_only")
 
 
 class BarbetConfig(PretrainedConfig):
@@ -55,12 +63,15 @@ class BarbetConfig(PretrainedConfig):
         rms_norm_eps: float = 1.0e-6,
         hidden_dropout: float = 0.0,
         attention_dropout: float = 0.0,
+        attention_fallback_max_sequence_length: int = 4096,
+        loss_chunk_size: int = 1024,
         initializer_range: float = 0.02,
         use_cache: bool = True,
         tie_word_embeddings: bool = True,
         mamba_d_state: int = 64,
         mamba_d_conv: int = 4,
         mamba_expand: int = 2,
+        mamba_prefill_chunk_size: int = 65536,
         mtp_enabled: bool = True,
         mtp_offsets: list[int] | tuple[int, ...] = (2, 3),
         mtp_loss_weights: dict[str, float] | dict[int, float] | None = None,
@@ -99,17 +110,44 @@ class BarbetConfig(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.hidden_dropout = hidden_dropout
         self.attention_dropout = attention_dropout
+        self.attention_fallback_max_sequence_length = attention_fallback_max_sequence_length
+        self.loss_chunk_size = loss_chunk_size
         self.initializer_range = initializer_range
         self.use_cache = use_cache
         self.mamba_d_state = mamba_d_state
         self.mamba_d_conv = mamba_d_conv
         self.mamba_expand = mamba_expand
+        self.mamba_prefill_chunk_size = mamba_prefill_chunk_size
         self.mtp_enabled = mtp_enabled
         self.mtp_offsets = [int(offset) for offset in mtp_offsets]
         weights = mtp_loss_weights or {2: 0.2, 3: 0.1}
         self.mtp_loss_weights = {str(int(k)): float(v) for k, v in dict(weights).items()}
         self.unk_token_id = unk_token_id
         self._validate()
+
+    @classmethod
+    def barbet_300m(
+        cls,
+        vocab_size: int = MEGATRON_PADDED_VOCAB_SIZE,
+        max_position_embeddings: int = 8192,
+    ) -> "BarbetConfig":
+        """Taiwan-Omni-300M-R2 shape: tied vocab tables fund a 20-layer body."""
+        return cls(
+            vocab_size=vocab_size,
+            hidden_size=1024,
+            intermediate_size=2816,
+            num_hidden_layers=20,
+            num_attention_heads=8,
+            num_key_value_heads=2,
+            head_dim=128,
+            max_position_embeddings=max_position_embeddings,
+            sliding_window_size=2048,
+            global_attention_layers=(0, 4, 8, 12, 16),
+            mamba_layers=(3, 7, 11, 15, 19),
+            qk_logit_clip=False,
+            attention_sink=False,
+            tie_word_embeddings=True,
+        )
 
     @classmethod
     def barbet_1b(
@@ -137,14 +175,45 @@ class BarbetConfig(PretrainedConfig):
 
     @classmethod
     def barbet_1b_1m_extension(cls) -> "BarbetConfig":
-        """1M research extension: linear RoPE scaling x4 from the 256K base."""
+        """1M research extension candidate with global-attention-only RoPE."""
         config = cls.barbet_1b(max_position_embeddings=1048576)
         config.rope_scaling = {
-            "type": "linear",
+            "type": "llama3",
             "factor": 4.0,
-            "original_context_length": 262144,
+            "original_max_position_embeddings": 262144,
+            "low_freq_factor": 1.0,
+            "high_freq_factor": 4.0,
+            "attention_scope": "global_only",
         }
+        config._validate()
         return config
+
+    @classmethod
+    def barbet_1b_base(cls) -> "BarbetConfig":
+        """Released OpenFormosa/barbet-1b-base shape (native 1M context).
+
+        29 layers in a ``[G, G, G, M] x 7 + G`` pattern: 22 global-attention
+        layers and 7 Mamba2 layers, no sliding-window layers, no RoPE scaling.
+        This matches the ``config.json`` shipped with the Hub weights.
+        """
+        num_layers = 29
+        return cls(
+            vocab_size=MEGATRON_PADDED_VOCAB_SIZE,
+            hidden_size=1536,
+            intermediate_size=5120,
+            num_hidden_layers=num_layers,
+            num_attention_heads=16,
+            num_key_value_heads=2,
+            head_dim=128,
+            max_position_embeddings=1048576,
+            sliding_window_size=8192,
+            global_attention_layers=[i for i in range(num_layers) if i % 4 != 3],
+            mamba_layers=list(range(3, num_layers - 1, 4)),
+            qk_logit_clip=False,
+            attention_sink=False,
+            tie_word_embeddings=True,
+            mtp_enabled=False,
+        )
 
     def layer_type(self, layer_idx: int) -> str:
         if layer_idx in self.global_attention_layers:
@@ -162,6 +231,17 @@ class BarbetConfig(PretrainedConfig):
             raise ValueError("num_attention_heads must be divisible by num_key_value_heads")
         if self.num_attention_heads * self.head_dim < self.hidden_size:
             raise ValueError("num_attention_heads * head_dim must cover hidden_size")
+        if self.attention_fallback_max_sequence_length <= 0:
+            raise ValueError("attention_fallback_max_sequence_length must be positive")
+        if self.loss_chunk_size <= 0:
+            raise ValueError("loss_chunk_size must be positive")
+        if (
+            self.mamba_prefill_chunk_size <= 0
+            or self.mamba_prefill_chunk_size % 128 != 0
+        ):
+            raise ValueError(
+                "mamba_prefill_chunk_size must be a positive multiple of 128"
+            )
         layer_ids = set(range(self.num_hidden_layers))
         scheduled = set(self.global_attention_layers) | set(self.mamba_layers)
         invalid = scheduled - layer_ids
@@ -175,6 +255,75 @@ class BarbetConfig(PretrainedConfig):
             if scaling_type not in ROPE_SCALING_TYPES:
                 raise ValueError(
                     f"rope_scaling.type must be one of {ROPE_SCALING_TYPES}, got {scaling_type!r}"
+                )
+            if scaling_type != "none":
+                factor = self.rope_scaling.get("factor")
+                if not isinstance(factor, (int, float)) or float(factor) <= 1.0:
+                    raise ValueError("rope_scaling.factor must be greater than one")
+                attention_scope = self.rope_scaling.get(
+                    "attention_scope", "all_attention"
+                )
+                if attention_scope not in ROPE_ATTENTION_SCOPES:
+                    raise ValueError(
+                        "rope_scaling.attention_scope must be one of "
+                        f"{ROPE_ATTENTION_SCOPES}, got {attention_scope!r}"
+                    )
+            if scaling_type == "llama3":
+                original = self.rope_scaling.get(
+                    "original_max_position_embeddings",
+                    self.rope_scaling.get("original_context_length"),
+                )
+                low = self.rope_scaling.get("low_freq_factor")
+                high = self.rope_scaling.get("high_freq_factor")
+                if not isinstance(original, int) or original <= 0:
+                    raise ValueError(
+                        "llama3 rope_scaling requires positive "
+                        "original_max_position_embeddings"
+                    )
+                if (
+                    not isinstance(low, (int, float))
+                    or not isinstance(high, (int, float))
+                    or float(low) <= 0.0
+                    or float(high) <= float(low)
+                ):
+                    raise ValueError(
+                        "llama3 rope_scaling requires "
+                        "0 < low_freq_factor < high_freq_factor"
+                    )
+            elif scaling_type == "longrope2":
+                if self.head_dim != 128:
+                    raise ValueError(
+                        "longrope2 rope_scaling requires Barbet head_dim=128"
+                    )
+                if self.rope_scaling.get("attention_scope") != "global_only":
+                    raise ValueError(
+                        "longrope2 rope_scaling is authorized only for "
+                        "global_only attention"
+                    )
+                from .megatron_long_context import (
+                    LONGROPE2_PER_DIMENSION_GLOBAL_ONLY_POLICY,
+                    build_position_policy_payload,
+                )
+
+                build_position_policy_payload(
+                    position_policy=(
+                        LONGROPE2_PER_DIMENSION_GLOBAL_ONLY_POLICY
+                    ),
+                    factor=self.rope_scaling.get("factor"),
+                    original_context_length=self.rope_scaling.get(
+                        "original_max_position_embeddings",
+                        self.rope_scaling.get("original_context_length"),
+                    ),
+                    low_frequency_factor=self.rope_scaling.get(
+                        "low_freq_factor"
+                    ),
+                    high_frequency_factor=self.rope_scaling.get(
+                        "high_freq_factor"
+                    ),
+                    scale_vector=self.rope_scaling.get("scale_vector"),
+                    scale_vector_sha256=self.rope_scaling.get(
+                        "scale_vector_sha256"
+                    ),
                 )
 
     @staticmethod
