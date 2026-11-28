@@ -61,11 +61,11 @@ print(config.max_position_embeddings)
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-tokenizer = AutoTokenizer.from_pretrained("OpenFormosa/PangolinTokenizer")
+tokenizer = AutoTokenizer.from_pretrained("OpenFormosa/barbet-1b-base", trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
     "OpenFormosa/barbet-1b-base",
     trust_remote_code=True,
-    torch_dtype="auto",
+    dtype="auto",
     device_map="auto",
 )
 ```

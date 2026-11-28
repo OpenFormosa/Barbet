@@ -30,7 +30,7 @@ The name comes from the Taiwan barbet, a bird endemic to Taiwan.
 1. Install Transformers:
 
    ```bash
-   pip install "transformers>=4.45" torch
+   pip install "transformers>=4.57" torch
    ```
 
 2. Load the model from Hugging Face:
@@ -38,23 +38,25 @@ The name comes from the Taiwan barbet, a bird endemic to Taiwan.
    ```python
    from transformers import AutoModelForCausalLM, AutoTokenizer
 
-   tokenizer = AutoTokenizer.from_pretrained("OpenFormosa/PangolinTokenizer")
+   tokenizer = AutoTokenizer.from_pretrained("OpenFormosa/barbet-1b-base", trust_remote_code=True)
    model = AutoModelForCausalLM.from_pretrained(
        "OpenFormosa/barbet-1b-base",
        trust_remote_code=True,
-       torch_dtype="auto",
+       dtype="auto",
        device_map="auto",
    )
    ```
 
 3. Run `print(model.config.max_position_embeddings)`. It prints `1048576`.
 
+   `generate()`, batched generation and `pipeline("text-generation")` work out of the box. See [Transformers usage](docs/transformers_usage.md) (Traditional Chinese).
+
 ## Installation
 
 | Item | Requirement |
 | --- | --- |
 | Python | 3.10 or later |
-| Main dependencies | PyTorch ≥ 2.3, transformers ≥ 4.45 |
+| Main dependencies | PyTorch ≥ 2.3, transformers ≥ 4.57 (tested on 4.57.6 and 5.24.1) |
 | Hardware | CUDA GPU with `mamba_ssm` recommended; CPU uses a PyTorch fallback |
 
 Install from source and run the tests:
@@ -73,14 +75,14 @@ Use the built-in config when you want to change the architecture or train from s
 ```python
 from barbet import BarbetConfig, BarbetForCausalLM
 
-config = BarbetConfig.barbet_1b()
+config = BarbetConfig.barbet_1b_base()
 model = BarbetForCausalLM(config)
 ```
 
 This repository provides:
 
 - `BarbetConfig`, `BarbetModel`, `BarbetForCausalLM`
-- `configs/barbet_1b/config.json`, `configs/barbet_1b_1m/config.json`
+- `configs/barbet_1b_base/config.json` (same as the Hub weights), `configs/barbet_1b/config.json`, `configs/barbet_1b_1m/config.json`
 - `configuration_barbet.py` and `modeling_barbet.py` for remote-code loading from the Hugging Face Hub
 
 ### Inspect the config only
@@ -119,6 +121,7 @@ The current release and the repository presets play different roles:
 | Configuration | Purpose | Context length |
 | --- | --- | ---: |
 | `OpenFormosa/barbet-1b-base` | Current `iter7008` weights and bundled config | **Native 1M** |
+| `configs/barbet_1b_base/` | Copy of the config shipped with the Hub weights | **Native 1M** |
 | `configs/barbet_1b/` | Legacy R2 preset, kept for reproducibility | Native 256K |
 | `configs/barbet_1b_1m/` | Legacy R2 inference extrapolation preset | 1M RoPE extrapolation |
 

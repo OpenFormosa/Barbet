@@ -16,7 +16,7 @@ from torch.distributed.checkpoint.metadata import TensorStorageMetadata
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REMOTE_CODE_FILES = ("configuration_barbet.py", "modeling_barbet.py")
+REMOTE_CODE_FILES = ("configuration_barbet.py", "modeling_barbet.py", "megatron_long_context.py")
 
 
 def resolve_iter_dir(checkpoint: Path) -> Path:

@@ -2,16 +2,17 @@
 
 Barbet 使用 `BarbetConfig`，它是標準的 Transformers `PretrainedConfig`。
 
-> 注意：本 repository 的兩組 presets 對應原始 R2／legacy 研究設定。Hugging Face 上目前發布的 `final-global-barbet-iter7008-stable-1m-v11` 是 29 層、原生 1M 的 checkpoint，應直接使用模型 repository 隨權重發布的 `config.json`。完整差異見[長上下文文件](long_context.md)。
+> 注意：Hugging Face 上目前發布的是 29 層、原生 1M 的 checkpoint。它的設定副本在 `configs/barbet_1b_base/config.json`，對應的工廠方法是 `BarbetConfig.barbet_1b_base()`。`barbet_1b` 與 `barbet_1b_1m` 是早期 28 層 R2 的研究設定，和目前發布的權重不相容。完整差異見[長前後文](long_context.md)。
 
 ## 預設設定
 
 | 設定 | 上下文長度 | 滑動視窗 |
 | --- | ---: | ---: |
+| `barbet_1b_base`（發布版） | 1048576 | 無（22 層全域注意力 + 7 層 Mamba2） |
 | `barbet_1b` | 262144 | 8192 |
 | `barbet_1b_1m` | 1048576 | 8192 |
 
-兩組設定都使用固定的 `openformosa/PangolinTokenizer` 詞彙表，並內建以下標準 token id，所以生成時的停止與補齊行為會自動和 tokenizer 一致：
+所有設定都使用固定的 `OpenFormosa/PangolinTokenizer` 詞彙表，並內建以下標準 token id，所以生成時的停止與補齊行為會自動和 tokenizer 一致：
 
 - `unk_token_id=114688`（`<unk>`）
 - `bos_token_id=114689`（`<s>`）
@@ -20,6 +21,7 @@ Barbet 使用 `BarbetConfig`，它是標準的 Transformers `PretrainedConfig`�
 
 ## 檔案
 
+- `configs/barbet_1b_base/config.json`（與 Hub 權重一起發布的設定，手動維護，不由指令重新產生）
 - `configs/barbet_1b/config.json`
 - `configs/barbet_1b_1m/config.json`
 
@@ -49,6 +51,7 @@ PYTHONPATH=src python scripts/write_model_configs.py
 ```python
 from barbet import BarbetConfig
 
+release = BarbetConfig.barbet_1b_base()
 config_1b = BarbetConfig.barbet_1b()
 config_1m = BarbetConfig.barbet_1b_1m_extension()
 ```
